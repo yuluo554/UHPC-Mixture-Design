@@ -391,6 +391,8 @@ fm.incremental_update("random_forest")
 
 本项目基于 MIT 许可证开源。详见 [LICENSE](LICENSE) 文件。
 
+> 原作 [Concrete-Mixture-Design-Framework](https://github.com/lekhuong/Concrete-Mixture-Design-Framework) 以 CC0 1.0 Universal 协议发布（公有领域）。本衍生版在原作基础上进行深度改造与扩展，新增代码以 MIT 协议发布。CC0 协议允许在遵守其条款的前提下进行再许可和重新发布。
+
 ---
 
 <p align="center">
