@@ -1,0 +1,101 @@
+# =============================================================================
+# UHPC 参数模板 — 全平台共享的数据契约
+# =============================================================================
+
+composition:
+  - name: cement
+    label: "水泥"
+    range: [600, 1000]
+    unit: "kg/m³"
+    step: 10
+  - name: silica_fume
+    label: "硅灰"
+    range: [50, 250]
+    unit: "kg/m³"
+    step: 5
+  - name: quartz_powder
+    label: "石英粉"
+    range: [0, 400]
+    unit: "kg/m³"
+    step: 10
+  - name: quartz_sand
+    label: "石英砂"
+    range: [800, 1200]
+    unit: "kg/m³"
+    step: 10
+  - name: superplasticizer
+    label: "减水剂"
+    range: [5, 40]
+    unit: "kg/m³"
+    step: 0.5
+  - name: water
+    label: "水"
+    range: [140, 220]
+    unit: "kg/m³"
+    step: 1
+
+fiber:
+  - name: fiber_volume
+    label: "钢纤维体积率"
+    range: [0.5, 3.0]
+    unit: "%"
+    step: 0.1
+  - name: fiber_diameter
+    label: "纤维直径"
+    range: [0.12, 0.6]
+    unit: "mm"
+    step: 0.01
+  - name: fiber_length
+    label: "纤维长度"
+    range: [6, 20]
+    unit: "mm"
+    step: 1
+  - name: fiber_aspect_ratio
+    label: "长径比"
+    range: [40, 100]
+    unit: "-"
+    step: 5
+
+curing:
+  - name: curing_temp
+    label: "养护温度"
+    type: categorical
+    values: [20, 60, 90, 250]
+    value_labels: ["常温(20°C)", "蒸汽(60°C)", "热水(90°C)", "干热(250°C)"]
+  - name: curing_time
+    label: "养护时间"
+    range: [24, 168]
+    unit: "h"
+
+targets:
+  - name: compressive_strength_28d
+    label: "28d抗压强度"
+    direction: maximize
+    range: [120, 250]
+    unit: "MPa"
+  - name: flexural_strength_28d
+    label: "28d抗弯强度"
+    direction: maximize
+    range: [20, 60]
+    unit: "MPa"
+  - name: slump_flow
+    label: "坍落扩展度"
+    direction: target
+    target_range: [180, 250]
+    unit: "mm"
+  - name: cost
+    label: "材料成本"
+    direction: minimize
+    unit: "¥/m³"
+  - name: carbon_emission
+    label: "碳排放"
+    direction: minimize
+    unit: "kg CO₂/m³"
+
+constraints:
+  - name: volume_sum
+    description: "各组分体积和 = 1 m³"
+    tolerance: 0.001
+  - name: water_binder_ratio
+    description: "水胶比范围"
+    range: [0.14, 0.24]
