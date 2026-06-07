@@ -24,10 +24,12 @@ from core.config import (
     get_feature_ranges,
     get_target_direction,
     get_feature_label,
+    get_target_label,
     get_targets,
     get_constraints,
 )
 from core.model_trainer import MultiTargetTrainer
+from core.data_bridge import get_unified_dataset
 
 st.set_page_config(
     page_title="逆向优化 - UHPC-AutoDesign",
@@ -83,20 +85,18 @@ _Y_data: Optional[pd.DataFrame] = None
 
 
 def _load_data():
-    """加载数据：优先 session_state，其次 literature.csv"""
+    """加载数据：优先 session_state，其次统一数据集"""
     # 检查 session state
     for key in ["cleaned_data", "synthetic_data"]:
         if key in st.session_state and st.session_state[key] is not None:
             return st.session_state[key]
 
-    # 回退到 literature.csv
-    csv_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "literature.csv",
-    )
-    if os.path.exists(csv_path):
-        return pd.read_csv(csv_path)
-    return None
+    # 回退到统一数据集
+    try:
+        unified = get_unified_dataset()
+        return unified["df"]
+    except Exception:
+        return None
 
 
 df_all = _load_data()
@@ -257,7 +257,9 @@ with tab_setup:
     weight_cols = st.columns(min(len(selected_targets), 5))
     weights_dict = {}
     for i, t_name in enumerate(selected_targets):
-        t_label = get_feature_label(t_name) if t_name in get_all_feature_names() else t_name
+        # 目标是 targets 分组中的元素，get_feature_label 查不到
+        # 直接用 get_target_label 查中文 label（找不到时返回原 name 作为 fallback）
+        t_label = get_target_label(t_name)
         d = selected_dirs[i]
         arrow = {"maximize": "↑", "minimize": "↓", "target": "⊙"}.get(d, "")
         with weight_cols[i % len(weight_cols)]:

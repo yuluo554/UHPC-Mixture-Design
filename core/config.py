@@ -92,11 +92,23 @@ def get_categorical_features():
 
 
 def get_feature_label(name):
-    """根据 name 返回中文 label"""
+    """根据 name 返回中文 label（输入特征：组成/纤维/养护）"""
     for group in ["composition", "fiber", "curing"]:
         for item in _load_config()[group]:
             if item["name"] == name:
                 return item.get("label", name)
+    return name
+
+
+def get_target_label(name):
+    """根据 name 返回目标的中文 label（找不到则返回原名）
+
+    与 ``get_feature_label`` 配对使用 — 后者只查 composition/fiber/curing 三组，
+    目标（compressive_strength_28d 等）永远查不到，需要单独查询。
+    """
+    for t in _load_config()["targets"]:
+        if t["name"] == name:
+            return t.get("label", name)
     return name
 
 

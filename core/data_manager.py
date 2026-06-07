@@ -67,7 +67,9 @@ class DataManager:
         if not self.feature_columns:
             self.feature_columns = [c for c in df.columns if c not in known_targets]
         if not self.target_columns:
-            self.target_columns = [c for c in df.columns if c in known_targets]
+            # 排除已知/已识别特征后剩下的列当作目标
+            # （旧实现写成 `c in known_targets` 是死代码——如果第一遍没找到，第二遍也找不到）
+            self.target_columns = [c for c in df.columns if c not in self.feature_columns]
 
     # ─── 数据清洗 ────────────────────────────────────────────────
 
