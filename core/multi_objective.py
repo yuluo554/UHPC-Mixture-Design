@@ -683,9 +683,20 @@ class MultiObjectiveOptimizer:
         """
         import joblib
 
+        # BUG-20260607-022 修复：使用白名单只恢复 save() 写入的合法字段，
+        # 避免 setattr 全量覆盖导致类属性 ALGORITHMS（dict）被旧 pkl 中同名字段
+        # 覆盖（虽然 type(self).ALGORITHMS 可恢复，但中间状态混乱）。
+        # 同时兼容 "time"（历史 save()）和 "optimization_time"（prompt 中公开名）。
+        _ALLOWED_LOAD_KEYS = {
+            "pareto_X", "pareto_Y", "history",
+            "time", "optimization_time",
+            "feature_names", "target_names",
+            "directions", "algorithm", "pop_size",
+        }
         data = joblib.load(path)
-        for k, v in data.items():
-            setattr(self, k, v)
+        for k in _ALLOWED_LOAD_KEYS:
+            if k in data:
+                setattr(self, k, data[k])
         return self
 
 

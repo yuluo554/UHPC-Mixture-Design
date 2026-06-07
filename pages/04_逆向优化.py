@@ -154,12 +154,14 @@ with tab_setup:
 
         target_info = get_targets()
         target_options = []
+        # BUG-20260607-032 修复（pages/04 版）：用 dict 映射 label → name
+        label_to_name: dict[str, str] = {}
         for t in target_info:
             if t["name"] in _available_targets:
                 emoji = {"maximize": "↑", "minimize": "↓", "target": "⊙"}
-                target_options.append(
-                    f"{emoji.get(t['direction'], '→')} {t['label']} ({t['name']})"
-                )
+                option = f"{emoji.get(t['direction'], '→')} {t['label']} ({t['name']})"
+                target_options.append(option)
+                label_to_name[option] = t["name"]
 
         default_idx = list(range(min(5, len(target_options))))
         selected_labels = st.multiselect(
@@ -173,7 +175,7 @@ with tab_setup:
         selected_targets = []
         selected_dirs = []
         for label in selected_labels:
-            name = label.split("(")[-1].rstrip(")")
+            name = label_to_name.get(label, label)
             selected_targets.append(name)
             d = get_target_direction(name)
             selected_dirs.append(d if d else "minimize")

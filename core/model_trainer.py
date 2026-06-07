@@ -83,6 +83,98 @@ class ModelTrainer:
             raise RuntimeError("模型未训练，请先调用 train()")
         return self.model.predict(X)
 
+    def predict_with_uncertainty(
+        self, X: pd.DataFrame
+    ) -> tuple:
+        """预测均值与逐样本标准差。
+
+        不同模型类型的方差估计策略：
+          - random_forest:     所有树的预测值标准差（真实 epistemic uncertainty）
+          - gradient_boosting: staged_predict 阶段间标准差
+          - xgboost:          按迭代间隔采样的预测值标准差
+          - lightgbm:         按迭代间隔采样的预测值标准差
+
+        Args:
+            X: 特征 DataFrame
+
+        Returns:
+            (mean, std) — 预测均值 (n,) 和标准差 (n,)
+
+        Raises:
+            RuntimeError: 模型未训练
+        """
+        if self.model is None:
+            raise RuntimeError("模型未训练，请先调用 train()")
+
+        X_vals = X.values if isinstance(X, pd.DataFrame) else X
+
+        if self.model_type == "random_forest":
+            # 所有树的预测 → 树间标准差
+            tree_preds = np.array([
+                tree.predict(X_vals) for tree in self.model.estimators_
+            ])  # (n_trees, n_samples)
+            mean = tree_preds.mean(axis=0)
+            std = tree_preds.std(axis=0, ddof=1)
+            # 防止单样本/纯节点导致 std=0
+            std = np.maximum(std, np.abs(mean) * 0.001 + 1e-6)
+
+        elif self.model_type == "gradient_boosting":
+            # staged_predict 逐阶段预测
+            staged = list(self.model.staged_predict(X_vals))
+            if len(staged) <= 1:
+                mean = staged[0] if staged else self.predict(X)
+                std = np.full_like(mean, 0.05 * np.abs(mean) + 0.01)
+            else:
+                staged_arr = np.column_stack(staged)  # (n, n_stages)
+                mean = staged_arr[:, -1]  # 最终阶段
+                std = staged_arr.std(axis=1, ddof=1)
+                std = np.maximum(std, np.abs(mean) * 0.001 + 1e-6)
+
+        elif self.model_type == "xgboost":
+            # 按迭代间隔采样（避免 200 棵树 → 200 次预测）
+            n_trees = self.model.n_estimators
+            sample_interval = max(1, n_trees // 50)
+            sampled = []
+            for i in range(sample_interval, n_trees + 1, sample_interval):
+                try:
+                    pred = self.model.predict(X_vals, iteration_range=(0, i))
+                except TypeError:
+                    pred = self.model.predict(X_vals, ntree_limit=i)
+                sampled.append(pred)
+            final_mean = sampled[-1] if sampled else self.predict(X)
+            if len(sampled) <= 1:
+                std = np.full_like(final_mean, 0.05 * np.abs(final_mean) + 0.01)
+            else:
+                all_preds = np.column_stack(sampled)
+                std = all_preds.std(axis=1, ddof=1)
+                std = np.maximum(std, np.abs(final_mean) * 0.001 + 1e-6)
+            mean = final_mean
+
+        elif self.model_type == "lightgbm":
+            # 按迭代间隔采样
+            n_trees = self.model.n_estimators
+            sample_interval = max(1, n_trees // 50)
+            final_mean = self.model.predict(X_vals)
+            sampled = []
+            for i in range(sample_interval, n_trees + 1, sample_interval):
+                pred = self.model.predict(X_vals, num_iteration=i)
+                sampled.append(pred)
+            if len(sampled) <= 1:
+                std = np.full_like(final_mean, 0.05 * np.abs(final_mean) + 0.01)
+            else:
+                all_preds = np.column_stack(sampled)
+                std = all_preds.std(axis=1, ddof=1)
+                std = np.maximum(std, np.abs(final_mean) * 0.001 + 1e-6)
+            mean = final_mean
+
+        else:
+            raise ValueError(
+                f"不支持的模型类型: {self.model_type}，"
+                f"支持: {self.MODEL_TYPES}"
+            )
+
+        return mean.ravel(), std.ravel()
+
     def cross_validate(self, X: pd.DataFrame, y: pd.Series, cv: int = 10) -> dict:
         """
         K 折交叉验证
@@ -162,6 +254,25 @@ class MultiTargetTrainer:
             results[name] = trainer.predict(X)
         return pd.DataFrame(results)
 
+    def predict_all_with_uncertainty(
+        self, X: pd.DataFrame
+    ) -> tuple:
+        """返回所有目标的预测均值和标准差。
+
+        Args:
+            X: 特征 DataFrame
+
+        Returns:
+            (mean_df, std_df) — 列名均为 self.models 的键
+        """
+        means = {}
+        stds = {}
+        for name, trainer in self.models.items():
+            m, s = trainer.predict_with_uncertainty(X)
+            means[name] = m
+            stds[name] = s
+        return pd.DataFrame(means), pd.DataFrame(stds)
+
     def cross_validate_all(self, X: pd.DataFrame, Y: pd.DataFrame, cv: int = 10) -> dict:
         """对所有目标做交叉验证"""
         all_results = {}
@@ -169,6 +280,36 @@ class MultiTargetTrainer:
             trainer = ModelTrainer(model_type=self.model_type)
             all_results[col] = trainer.cross_validate(X, Y[col], cv=cv)
         return all_results
+
+    def evaluate_on_test(
+        self, X_test: pd.DataFrame, Y_test: pd.DataFrame
+    ) -> pd.DataFrame:
+        """在独立测试集上评估所有目标。
+
+        与 cross_validate_all 不同：此方法使用已训练的模型
+        （train_all 之后），在留出的测试集上一次性评估。
+        返回每个目标的 R² / MAE / RMSE。
+
+        Args:
+            X_test: 测试集特征
+            Y_test: 测试集目标
+
+        Returns:
+            DataFrame，列为 target, r2, mae, rmse
+        """
+        rows = []
+        for target_name, trainer in self.models.items():
+            if target_name not in Y_test.columns:
+                continue
+            y_true = Y_test[target_name].values
+            y_pred = trainer.predict(X_test)
+            rows.append({
+                "target": target_name,
+                "r2": float(r2_score(y_true, y_pred)),
+                "mae": float(mean_absolute_error(y_true, y_pred)),
+                "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+            })
+        return pd.DataFrame(rows)
 
     def save_all(self, directory: str):
         """保存所有模型到指定目录"""

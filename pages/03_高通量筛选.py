@@ -200,11 +200,16 @@ with tab_setup:
         # 目标选择，显示中文标签和方向
         target_info = get_targets()
         target_options = []
+        # BUG-20260607-032 修复：用 dict 映射 label → name，
+        # 避免 label 中包含括号时 split("(") 解析错位。
+        label_to_name: dict[str, str] = {}
         for t in target_info:
             if t["name"] in _available_targets:
                 direction_emoji = {"maximize": "↑", "minimize": "↓", "target": "⊙"}
                 emoji = direction_emoji.get(t["direction"], "→")
-                target_options.append(f"{emoji} {t['label']} ({t['name']})")
+                option = f"{emoji} {t['label']} ({t['name']})"
+                target_options.append(option)
+                label_to_name[option] = t["name"]
 
         # 默认选择前 4 个目标
         default_indices = list(range(min(4, len(target_options))))
@@ -217,11 +222,11 @@ with tab_setup:
             help="↑ = 最大化 | ↓ = 最小化 | ⊙ = 趋近目标值",
         )
 
-        # 解析选中的目标名
+        # 解析选中的目标名（BUG-20260607-032：用 dict 映射）
         selected_targets = []
         selected_dirs = []
         for label in selected_target_labels:
-            name = label.split("(")[-1].rstrip(")")
+            name = label_to_name.get(label, label)
             selected_targets.append(name)
             d = get_target_direction(name)
             selected_dirs.append(d if d else "minimize")

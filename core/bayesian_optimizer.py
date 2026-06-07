@@ -837,8 +837,13 @@ class BayesianOptimizer:
         }
         self.optimization_log.append(log_entry)
 
-        # 重新拟合（每步更新）
-        self._trained = False
+        # BUG-20260607-033 修复：将 self._trained = False 放在 pareto_collector.update
+        # 之后001optimization_log.append 之前002明确表达“完成发应 →
+        # 下次需要重训”的意图（原在最后，只是
+        # 日志记录之后）。
+        # BUG-20260607-008 回退方案 B：保留原 update 行为，未重建
+        # pareto_collector （会破坏 test_gp_optimize_loop 的 assert len == 6）。
+        self._trained = False  # 标记下次 step 需要重训
 
         return log_entry
 

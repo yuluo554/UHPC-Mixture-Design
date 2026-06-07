@@ -284,7 +284,18 @@ with tab1:
             with fc3:
                 fiber_length = st.number_input("Fiber Length (mm)", 6, 20, 13, step=1)
             with fc4:
-                fiber_aspect_ratio = st.number_input("Aspect Ratio", 40, 100, 65, step=5)
+                # BUG-20260607-029 修复：与 fiber_length / fiber_diameter 联动，
+                # 长径比理论值 = length / diameter (mm/mm) = 無单位
+                # 無法直接用 mm 但，原长径比的 number_input 取值 40-100 与
+                # 13/0.2=65 的理论值匹配，说明 input 单位实际上是 無单位的比值。
+                computed_ratio = fiber_length / fiber_diameter if fiber_diameter > 0 else 0
+                fiber_aspect_ratio = st.number_input(
+                    f"Aspect Ratio (理论={computed_ratio:.1f})",
+                    40, 100,
+                    max(40, min(100, int(round(computed_ratio)))),
+                    step=5,
+                )
+                st.caption("💡 长径比 = fiber_length / fiber_diameter (無单位)")
 
             st.markdown("**养护参数**")
             cc1, cc2 = st.columns(2)

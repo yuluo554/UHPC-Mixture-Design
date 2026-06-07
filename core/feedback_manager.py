@@ -6,6 +6,7 @@ UHPC-AutoDesign 闭环反馈管理器
 
 import os
 import time
+import warnings
 from datetime import datetime
 from typing import Optional
 
@@ -116,7 +117,6 @@ class FeedbackManager:
         self.experiment_data = self.experiment_data.dropna()
         after = len(self.experiment_data)
         if after < before:
-            import warnings
             warnings.warn(f"移除了 {before - after} 行含缺失值的实验数据")
 
         return self.experiment_data
