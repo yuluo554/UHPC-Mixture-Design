@@ -242,20 +242,7 @@ with tab4:
         col_shap1, col_shap2 = st.columns([1, 2])
 
         with col_shap1:
-            target_col = st.selectbox(
-                "选择预测目标",
-                st.session_state.target_columns,
-                help="选择要解释的目标变量"
-            )
-
-            model_type = st.selectbox(
-                "代理模型",
-                ["random_forest", "gradient_boosting", "xgboost"],
-            )
-
-            max_samples_shap = st.slider("SHAP 计算样本数", 50, 500, 200, 50,
-                                         help="样本太多会减慢计算速度")
-
+            # 按钮放最上面（避免在视口外）
             if st.button("🚀 运行 SHAP 分析", type="primary", use_container_width=True):
                 with st.spinner(f"训练 {model_type} 模型 + 计算 SHAP 值..."):
                     try:
@@ -285,6 +272,22 @@ with tab4:
                         st.error(f"❌ SHAP 分析失败: {e}")
                         import traceback
                         st.code(traceback.format_exc())
+
+            st.divider()
+
+            target_col = st.selectbox(
+                "选择预测目标",
+                st.session_state.target_columns,
+                help="选择要解释的目标变量"
+            )
+
+            model_type = st.selectbox(
+                "代理模型",
+                ["random_forest", "gradient_boosting", "xgboost"],
+            )
+
+            max_samples_shap = st.slider("SHAP 计算样本数", 50, 500, 200, 50,
+                                         help="样本太多会减慢计算速度")
 
         with col_shap2:
             if "shap_analyzer" in st.session_state and st.session_state.shap_analyzer is not None:

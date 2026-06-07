@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 # 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import core as _core
 from core.config import (
     get_all_feature_names,
     get_all_target_names,
@@ -195,7 +196,7 @@ if st.session_state.feedback_has_model:
         st.sidebar.success("🔄 已有更新后的模型")
 
 st.sidebar.divider()
-st.sidebar.caption("🔄 闭环反馈 v0.1.0")
+st.sidebar.caption(f"🔄 闭环反馈 v{_core.__version__}")
 
 # ═══════════════════════════════════════════════════════════════════
 # 主页

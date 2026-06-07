@@ -17,9 +17,9 @@ st.set_page_config(
 
 # ─── 侧边栏导航 ──────────────────────────────────────────────────
 with st.sidebar:
-    st.image(
-        "https://img.icons8.com/fluency/96/concrete-mixer.png",
-        width=64,
+    st.markdown(
+        "<div style='font-size: 64px; text-align: center; line-height: 1;'>🧱</div>",
+        unsafe_allow_html=True,
     )
 
     st.title("🧱 UHPC-AutoDesign")
@@ -44,7 +44,8 @@ with st.sidebar:
     """)
 
     st.divider()
-    st.caption("v0.1.0 | UHPC-AutoDesign")
+    import core as _core
+    st.caption(f"v{_core.__version__} | UHPC-AutoDesign")
 
 # ─── 主页内容 ────────────────────────────────────────────────────
 st.title("🧱 UHPC 智能配比设计全流程自动化平台")

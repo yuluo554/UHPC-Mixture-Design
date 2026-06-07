@@ -22,13 +22,13 @@ from core.model_trainer import MultiTargetTrainer
 
 # ─── 中文字体设置 ────────────────────────────────────────────────
 _ZH_FONT = None
-for name in ["SimHei", "Microsoft YaHei", "WenQuanYi Micro Hei", "Noto Sans CJK SC", "DejaVu Sans"]:
-    try:
-        fm.findfont(name, fallback_to_default=False)
+_known_zh_fonts = ["SimHei", "Microsoft YaHei", "WenQuanYi Micro Hei", "Noto Sans CJK SC"]
+_avail_fonts = {f.name for f in fm.fontManager.ttflist}
+for name in _known_zh_fonts:
+    if name in _avail_fonts:
         _ZH_FONT = name
         break
-    except Exception:
-        continue
+
 if _ZH_FONT:
     plt.rcParams["font.sans-serif"] = [_ZH_FONT, "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False

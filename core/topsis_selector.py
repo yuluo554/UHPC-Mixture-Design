@@ -156,27 +156,24 @@ class TOPSISSelector:
 
     def _to_benefit(self, Y: np.ndarray) -> np.ndarray:
         """
-        将所有目标统一转换为"越大越好"（效益型）。
+        将所有目标统一转换为"越大越好"（效益型），并平移使最小值为 0。
 
         - maximize → 保持
-        - minimize → 取负（加平移使非负）
-        - target → 到目标值距离的负数（加平移）
+        - minimize → 取负
+        - target → 到中位数距离的负数
+
+        每个分支独立处理，最后再做一次"平移到非负"，避免重复平移。
         """
         Yb = Y.astype(np.float64).copy()
         for i, d in enumerate(self.directions):
             col = Yb[:, i]
             if d == "minimize":
-                # 取负后平移使最小值为 0
-                neg = -col
-                Yb[:, i] = neg - neg.min()
+                col = -col
             elif d == "target":
-                # 距离越近越好 → 取负距离
                 median = float(np.median(col))
-                dist = np.abs(col - median)
-                neg_dist = -dist
-                Yb[:, i] = neg_dist - neg_dist.min()
-            # maximize: 保持，确保非负
-            Yb[:, i] = Yb[:, i] - Yb[:, i].min()
+                col = -np.abs(col - median)
+            # maximize: 保持原值
+            Yb[:, i] = col - col.min()  # 统一平移到非负
         return Yb
 
     # ── 排序与推荐 ────────────────────────────────────────────────
@@ -216,15 +213,24 @@ class TOPSISSelector:
         Returns:
             pd.DataFrame: Top-N 决策表。
         """
-        df = self.rank()
-        top_df = df.head(n).copy()
+        if self._scores is None:
+            self.compute_scores()
+        # 统一一次 argsort：按分数降序取前 n 个
+        top_indices = np.argsort(self._scores)[::-1][:n]
+        sorted_scores = self._scores[top_indices]
+        sorted_Y = self.pareto_Y[top_indices]
 
-        # 如果有设计变量，拼接特征值
+        results = {
+            "Rank": np.arange(1, n + 1),
+            "TOPSIS得分": np.round(sorted_scores, 4),
+        }
+        for j, name in enumerate(self.target_names):
+            results[name] = np.round(sorted_Y[:, j], 2)
+
+        top_df = pd.DataFrame(results)
+
+        # 如果有设计变量，拼接特征值（用同一个 top_indices，保证对齐）
         if self.pareto_X is not None and len(self.feature_names) > 0:
-            # 得分排序后的索引
-            if self._scores is None:
-                self.compute_scores()
-            top_indices = np.argsort(self._scores)[::-1][:n]
             X_top = self.pareto_X[top_indices]
             for j, fname in enumerate(self.feature_names):
                 if j < X_top.shape[1]:

@@ -127,9 +127,12 @@ with tab1:
 
             gen_count = st.number_input(
                 "生成数据量",
-                min_value=100, max_value=50000, value=1000, step=100,
+                min_value=100, max_value=50000,
+                value=st.session_state.get("vs_gen_count", 1000),
+                step=100, key="vs_gen_count_input",
                 help="要生成的合成数据行数"
             )
+            st.session_state.vs_gen_count = gen_count
 
             # 显示数据概要
             st.divider()
@@ -397,18 +400,25 @@ with tab2:
 
             validator = st.session_state.gan_validator
             if validator is not None:
-                all_numeric = data.select_dtypes(include=[np.number]).columns.tolist()
-                compare_col = st.selectbox(
-                    "选择要对比的列",
-                    all_numeric,
-                    key="dist_compare_col"
-                )
-                if compare_col:
-                    try:
-                        fig = validator.plot_distribution_comparison(compare_col)
-                        st.pyplot(fig)
-                    except Exception as e:
-                        st.warning(f"分布图绘制失败: {e}")
+                data_for_compare = data if data is not None else st.session_state.get("synthetic_data")
+                if data_for_compare is not None:
+                    all_numeric = data_for_compare.select_dtypes(include=[np.number]).columns.tolist()
+                    if all_numeric:
+                        compare_col = st.selectbox(
+                            "选择要对比的列",
+                            all_numeric,
+                            key="dist_compare_col"
+                        )
+                        if compare_col:
+                            try:
+                                fig = validator.plot_distribution_comparison(compare_col)
+                                st.pyplot(fig)
+                            except Exception as e:
+                                st.warning(f"分布图绘制失败: {e}")
+                    else:
+                        st.caption("没有可对比的数值列")
+                else:
+                    st.caption("无数据可比对")
             else:
                 st.caption("点击上方「运行 TSTR 全面验证」后可查看分布对比图")
 
@@ -512,7 +522,7 @@ with tab3:
                             st.session_state.gan_generator = gen
                             # 用加载的模型生成数据
                             st.session_state.synthetic_data = gen.generate(
-                                gen_count if 'gen_count' in locals() else 1000
+                                st.session_state.get("vs_gen_count", 1000)
                             )
                             st.success(f"✅ 模型已从 {load_path} 加载")
                         except Exception as e:

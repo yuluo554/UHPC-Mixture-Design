@@ -61,12 +61,13 @@ class SHAPAnalyzer:
 
     def plot_summary(self, show: bool = False) -> plt.Figure:
         """SHAP 特征重要性摘要图（条形图）"""
-        fig, ax = plt.subplots(figsize=(10, 6))
+        plt.figure(figsize=(10, 6))
         shap.summary_plot(
             self.shap_values, self.X,
             feature_names=self.feature_names,
             plot_type="bar", show=False
         )
+        fig = plt.gcf()
         plt.tight_layout()
         if show:
             plt.show()
@@ -74,12 +75,13 @@ class SHAPAnalyzer:
 
     def plot_beeswarm(self, show: bool = False) -> plt.Figure:
         """SHAP 蜜蜂群图"""
-        fig, ax = plt.subplots(figsize=(10, 6))
+        plt.figure(figsize=(10, 6))
         shap.summary_plot(
             self.shap_values, self.X,
             feature_names=self.feature_names,
             show=False
         )
+        fig = plt.gcf()
         plt.tight_layout()
         if show:
             plt.show()
@@ -87,13 +89,14 @@ class SHAPAnalyzer:
 
     def plot_dependence(self, feature: str, show: bool = False) -> plt.Figure:
         """单个特征的 SHAP 依赖图"""
-        fig, ax = plt.subplots(figsize=(8, 5))
+        plt.figure(figsize=(8, 5))
         idx = list(self.X.columns).index(feature) if feature in self.X.columns else 0
         shap.dependence_plot(
             idx, self.shap_values, self.X,
             feature_names=self.feature_names,
             show=False
         )
+        fig = plt.gcf()
         plt.tight_layout()
         if show:
             plt.show()
@@ -101,7 +104,7 @@ class SHAPAnalyzer:
 
     def plot_waterfall(self, index: int = 0, show: bool = False) -> plt.Figure:
         """单个样本的 Waterfall 瀑布图"""
-        fig, ax = plt.subplots(figsize=(8, 6))
+        plt.figure(figsize=(8, 6))
         shap.waterfall_plot(
             shap.Explanation(
                 values=self.shap_values[index],
@@ -111,6 +114,7 @@ class SHAPAnalyzer:
             ),
             show=False
         )
+        fig = plt.gcf()
         plt.tight_layout()
         if show:
             plt.show()
