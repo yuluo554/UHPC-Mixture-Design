@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify import surface (catches fake optional-dependency fallbacks)
+        run: |
+          python - <<'PY'
+          import importlib
+          mods = [
+              "core.config", "core.data_manager", "core.model_trainer",
+              "core.shap_analyzer", "core.bayesian_optimizer",
+              "core.multi_objective", "core.topsis_selector",
+              "core.feedback_manager", "core.data_bridge",
+              "core.dataset", "core.domain_features",
+              "core.virtual_optimizer", "core.gan_generator",
+          ]
+          failed = []
+          for m in mods:
+              try:
+                  importlib.import_module(m)
+              except Exception as e:
+                  failed.append((m, type(e).__name__, str(e)[:200]))
+          if failed:
+              for f in failed:
+                  print("IMPORT FAIL:", f)
+              raise SystemExit(1)
+          print("all %d core modules import OK" % len(mods))
+          PY
+
+      - name: Check dataset pipeline does not crash (data/raw is intentionally not in repo)
+        run: |
+          python - <<'PY'
+          from core.data_bridge import get_unified_dataset
+          r = get_unified_dataset()
+          print("n_total =", r["n_total"])
+          print("n_strength =", r["n_strength"])
+          print("source_counts =", r["source_counts"])
+          # 决策（2026-10-19）：data/raw/ 不入库。CI 里默认只有 literature.csv。
+          # 因此这里检查的是「缺数据时不崩、且有 37 行可用」，不是「数据必须上万行」。
+          # 若将来把数据入库，把下面的下限改回 1000，并把 docs/DATA.md 的说明同步删掉。
+          if r["n_strength"] < 1:
+              raise SystemExit("FAIL: 一条可用强度数据都没有，literature.csv 可能损坏")
+          if r["n_total"] != 37:
+              print("NOTE: n_total = %d（>37 说明 CI 环境里存在 data/raw/，或 literature.csv 变了）"
+                    % r["n_total"])
+          PY
+
+      - name: Verify DATA.md covers every DATASET_CONFIGS key
+        run: |
+          python - <<'PY'
+          import pathlib
+          from data.column_mapping import DATASET_CONFIGS
+          doc = pathlib.Path("docs/DATA.md")
+          if not doc.is_file():
+              raise SystemExit("FAIL: 缺 docs/DATA.md（决策：data/raw 不入库，必须提供获取说明）")
+          text = doc.read_text(encoding="utf-8")
+          missing = [k for k in DATASET_CONFIGS if k not in text]
+          print("DATASET_CONFIGS keys =", len(DATASET_CONFIGS), "| 未在 DATA.md 出现的 =", missing)
+          if missing:
+              raise SystemExit("FAIL: 以下数据集未在 docs/DATA.md 说明: %s" % missing)
+          PY
+
+      - name: Verify fetch_data.py manifest matches DATASET_CONFIGS paths
+        run: |
+          python - <<'PY'
+          import importlib.util, pathlib
+          from data.column_mapping import DATASET_CONFIGS, _data_path
+          spec = importlib.util.spec_from_file_location("fetch_data", "scripts/fetch_data.py")
+          fd = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(fd)
+          missing = [k for k in DATASET_CONFIGS if k not in fd.DATASETS]
+          extra = [k for k in fd.DATASETS if k not in DATASET_CONFIGS]
+          print("DATASET_CONFIGS =", len(DATASET_CONFIGS), "| fetch_data =", len(fd.DATASETS))
+          print("missing =", missing, "| extra =", extra)
+          if missing or extra:
+              raise SystemExit("FAIL: scripts/fetch_data.py 清单与 DATASET_CONFIGS 不一致")
+          bad = []
+          for k, cfg in fd.DATASETS.items():
+              expected = pathlib.Path(DATASET_CONFIGS[k]["path"]).resolve()
+              actual = (pathlib.Path("data") / cfg["dest"]).resolve()
+              if expected != actual:
+                  bad.append((k, str(actual), str(expected)))
+          if bad:
+              for b in bad:
+                  print("PATH MISMATCH:", b)
+              raise SystemExit("FAIL: fetch_data.py 的 dest 与 DATASET_CONFIGS 的 path 不一致")
+          print("all %d dataset paths match DATASET_CONFIGS" % len(fd.DATASETS))
+          PY
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -q --no-header -p no:cacheprovider
+
+      - name: Verify README claims match reality
+        run: |
+          python - <<'PY'
+          import re, subprocess, pathlib
+          out = subprocess.run(
+              ["python", "-m", "pytest", "tests/", "--collect-only", "-q",
+               "--no-header", "-p", "no:cacheprovider"],
+              capture_output=True, text=True).stdout
+          m = re.search(r"(\d+) tests collected", out)
+          collected = int(m.group(1)) if m else -1
+          readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+          badge = re.search(r"Tests-(\d+)%2F(\d+)", readme)
+          print("collected =", collected, "| README badge =", badge.groups() if badge else None)
+          if badge and int(badge.group(2)) != collected:
+              raise SystemExit(
+                  "FAIL: README 徽章写 %s 个用例，实际收集 %d 个。"
+                  % (badge.group(2), collected))
+          print("README test-count claim is consistent")
+          PY
+
+      - name: Verify Python version is consistent across runtime.txt / Dockerfile / README
+        run: |
+          python - <<'PY'
+          import pathlib, re
+          runtime = pathlib.Path("runtime.txt").read_text(encoding="utf-8").strip()
+          m = re.search(r"python-(\d+\.\d+)", runtime)
+          runtime_minor = m.group(1) if m else None
+          docker = pathlib.Path("Dockerfile").read_text(encoding="utf-8")
+          m2 = re.search(r"FROM python:(\d+\.\d+)", docker)
+          docker_minor = m2.group(1) if m2 else None
+          readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+          m3 = re.search(r"badge/Python-(\d+\.\d+)", readme)
+          readme_minor = m3.group(1) if m3 else None
+          print("runtime =", runtime_minor, "| docker =", docker_minor, "| readme badge =", readme_minor)
+          if len({runtime_minor, docker_minor, readme_minor}) != 1:
+              raise SystemExit("FAIL: Python 版本三处不一致")
+          print("Python version consistent:", runtime_minor)
+          PY
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t uhpc-autodesign:ci .
