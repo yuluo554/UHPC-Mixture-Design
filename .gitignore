@@ -26,6 +26,7 @@ coverage.xml
 # 虚拟环境
 venv/
 .venv/
+.venv-*/
 env/
 .env/
 .venv/
@@ -55,6 +56,10 @@ models/*.pth
 data/generated/
 data/experiments/
 data/__pycache__/
+
+# 原始数据集：不入库（体积大 / 有独立许可）
+# 用 `python scripts/fetch_data.py` 按 docs/DATA.md 下载到 data/raw/
+data/raw/
 
 # 截图 / 文档资源
 screenshots/

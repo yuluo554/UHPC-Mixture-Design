@@ -130,14 +130,34 @@ def _load_global_uhpc(filepath: str) -> pd.DataFrame:
     data_rows = rows[3:]
     df = pd.DataFrame(data_rows, columns=col_names)
 
-    # calamine 可能将所有列保留为 object，尝试转换为数值
+    # calamine 把所有单元格读成 object：数值列里混着 ""（未测龄期的空格）
+    # 直接 to_numeric 会抛 ValueError → 整列保持 object，notna() 判据随之失真
+    # （2188×8 的强度列只有 3915 个真实数值，却被当成 13571 个非空）
     for col in df.columns:
-        try:
-            df[col] = pd.to_numeric(df[col])
-        except (ValueError, TypeError):
-            pass  # 文本列保持 object
+        s = df[col]
+        if s.dtype == object:
+            # 空白字符串 / 纯空白 → NaN
+            s = s.map(_blank_to_nan)
+        non_null = s.notna().sum()
+        if non_null == 0:
+            df[col] = s
+            continue
+        converted = pd.to_numeric(s, errors="coerce")
+        # 只在「没有丢失任何非空值」时采用数值化结果，避免把文本列（如 Curing）
+        # 全部转成 NaN
+        if converted.notna().sum() == non_null:
+            df[col] = converted
+        else:
+            df[col] = s
 
     return df
+
+
+def _blank_to_nan(value):
+    """把空白字符串（含纯空白）统一转成 NaN，其它值原样返回"""
+    if isinstance(value, str) and not value.strip():
+        return np.nan
+    return value
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -548,6 +568,27 @@ def map_columns(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
             continue
         if raw_col in df.columns:
             result[std_col] = df[raw_col].values
+
+    # 统一数值化：17 个标准列都应是数值列。
+    # 原始数据里的空白字符串（"" / " "）会让整列停留在 object，
+    # 从而 notna() 判据失真（global_uhpc 曾出现 13571 个「非空」里 9641 个是空白串）。
+    # 这里先转成 NaN，再数值化。
+    # 判定规则：只要「非空值里至少 80% 能转成数值」就采用数值列，
+    # 少量脏值（如 15 行 "EN 196–1" 测试标准误入强度列）转 NaN；
+    # 反之保留原列（如 UMN 的 "12 hrs"/"28 day" 文本龄期，后面由 parse_umn_age 处理）。
+    for std_col in STD_COLS:
+        s = result[std_col]
+        if s.dtype == object:
+            s = s.map(_blank_to_nan)
+        non_null = s.notna().sum()
+        if non_null == 0:
+            result[std_col] = s
+            continue
+        converted = pd.to_numeric(s, errors="coerce")
+        if converted.notna().sum() >= 0.8 * non_null:
+            result[std_col] = converted
+        else:
+            result[std_col] = s
 
     return result
 
