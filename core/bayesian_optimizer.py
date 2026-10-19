@@ -8,6 +8,8 @@ UHPC-AutoDesign 贝叶斯优化模块
 - BayesianOptimizer: 多目标贝叶斯优化器
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import warnings
@@ -24,6 +26,7 @@ try:
 
     HAS_TORCH = True
 except ImportError:
+    torch = None
     HAS_TORCH = False
 
 try:
@@ -128,6 +131,11 @@ def _build_bounds_tensor(
     根据 config 构建特征边界张量 (2, d)，行0=下界，行1=上界。
     只处理数值型连续特征，分类型特征将被排除。
     """
+    if not HAS_TORCH:
+        raise ImportError(
+            "GP 代理模型的边界张量需要 torch。请执行: python -m pip install torch，"
+            "或改用 surrogate_type='rf'"
+        )
     ranges = get_feature_ranges()
     cat_features = get_categorical_features()
 
@@ -419,10 +427,15 @@ class BayesianOptimizer:
         self.random_state = random_state
 
         # ── 设备 ──────────────────────────────────────────────
+        # torch 是可选的（RF 代理模型路径不需要它），因此这里用 getattr 兜底
         if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = (
+                torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                if HAS_TORCH
+                else None
+            )
         else:
-            self.device = torch.device(device)
+            self.device = torch.device(device) if HAS_TORCH else None
 
         # ── 状态 ──────────────────────────────────────────────
         self._trained = False

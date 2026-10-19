@@ -2,12 +2,17 @@
 
 **钢纤维 UHPC 智能配比设计全流程自动化平台**
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-red)](https://streamlit.io)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-95%2F95-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-237%2F237-brightgreen)](tests/)
 
 基于 **AI 与材料基因组工程（MGI）** 的钢纤维 UHPC 配比智能设计与多目标优化平台。将传统"试错法"升级为 **数据驱动 + AI 驱动** 的 6 阶段全流程自动化。
+
+> **开箱即用：仓库自带 37 行文献数据，克隆后即可跑通全部 6 个阶段。**
+> 要复现论文级规模（约 2200 组配比 / 3700 条强度记录），按 [`docs/DATA.md`](docs/DATA.md)
+> 运行 `python scripts/fetch_data.py` 下载数据到 `data/raw/`（该目录不入库）。
+> 两者的区别只在统计意义——37 行够验证流程，不够训出可信模型。
 
 ---
 
@@ -34,7 +39,19 @@
 - [常见问题](#-常见问题)
 - [性能基准](#-性能基准)
 - [引用参考](#-引用参考)
+- [版本](#-版本)
 - [许可证](#-许可证)
+
+---
+
+## 🏷 版本
+
+| 版本 | 状态 | 关键变化 |
+|---|---|---|
+| **v2.0.0** | **当前** | 贝叶斯优化内核（BoTorch GP/EHVI）、虚拟空间优化、UHPCBenchmark、237 个测试；依赖清单补全（`python-calamine`/`numba`/`torch`，锁 `sdv<2`）；数据走「轻仓库 + `docs/DATA.md` + `scripts/fetch_data.py`」；文档与实测对齐 |
+| v0.1.0 | 历史 | 初始平台（`main` 上最早的提交） |
+
+> 版本号单一真相源：`core/__init__.py` 的 `__version__`。
 
 ---
 
@@ -152,7 +169,7 @@ docker compose down
 
 ### 方式二：本地 Python
 
-**前置要求：** Python 3.10-3.12（推荐 3.12）
+**前置要求：** Python 3.12（与 `runtime.txt`、`Dockerfile` 保持一致）
 
 ```bash
 # 1. 安装依赖
@@ -167,15 +184,42 @@ python -m streamlit run app.py
 
 > ⚠️ **注意：** 如果使用 Python 3.14，部分包（shap/numba）可能存在兼容性问题。 推荐 Python 3.12（Docker 镜像已配置）。
 
+### 数据：默认 37 行，要完整规模需要额外下载
+
+克隆下来就能跑，因为 `data/literature.csv`（37 行 × 17 列）随仓库提供。
+要做论文级建模，再执行：
+
+```bash
+python scripts/fetch_data.py            # 自动下载 8 个数据集并校验 SHA256
+python scripts/fetch_data.py --list     # 只看清单
+```
+
+`data/raw/` 不入库（体积 + 独立许可），来源 URL、SHA256、落盘路径见
+[`docs/DATA.md`](docs/DATA.md)。Kaggle 与 Figshare 两个数据集需要手动下载，脚本会打印指令。
+
 ### 运行测试
 
 ```bash
-# 全量测试（95 个用例）
-python -m pytest tests/test_pipeline.py -v
+# 全量测试（237 个用例，约 13 分钟）
+python -m pytest tests/ -q
 
 # 快速冒烟测试（跳过耗时用例）
-python -m pytest tests/test_pipeline.py -v -k "test_load or test_rf or test_config"
+python -m pytest tests/ -q -k "test_load or test_rf or test_config"
+
+# 只看单个文件
+python -m pytest tests/test_pipeline.py -v
 ```
+
+### 可选依赖（不装也能跑，功能降级）
+
+`requirements.txt` 已包含全部必需依赖；下面这些是**可选增强**，缺失时代码走降级分支：
+
+| 包 | 缺失时的能力差异 | 代码位置 |
+|---|---|---|
+| `xgboost` | `ModelTrainer` 不能选 XGBoost 模型（RF/GB 仍可用） | `core/model_trainer.py`（`HAS_XGBOOST`） |
+| `lightgbm` | 同上，LightGBM 不可选 | `core/model_trainer.py`（`HAS_LIGHTGBM`） |
+| `numba` | `algorithm="agemoea"` 报 ImportError；NSGA-II/III 不受影响（已列入 requirements） | `core/multi_objective.py` |
+| `torch` / `botorch` | 贝叶斯优化的 GP/Ensemble 路径不可用，自动回退 RF；`AppendUHPCFeatures` 会明确报错 | `core/bayesian_optimizer.py`、`core/domain_features.py` |
 
 ---
 
@@ -193,27 +237,47 @@ UHPC-AutoDesign/
 ├── core/
 │   ├── config.py                   # YAML 参数模板加载（单一真相源）
 │   ├── data_manager.py             # 数据加载/清洗/插补/归一化
+│   ├── dataset.py                  # UHPCDataset dataclass（数据契约）
+│   ├── data_bridge.py              # 统一数据入口（Streamlit 页面唯一来源）
 │   ├── model_trainer.py            # RF/GB/XGB/LGBM + 多目标训练器
 │   ├── shap_analyzer.py            # SHAP 特征重要性 + 可视化
 │   ├── gan_generator.py            # CTGAN/TVAE 生成器 + TSTR 验证
 │   ├── bayesian_optimizer.py       # 贝叶斯多目标优化（BoTorch GP/EHVI）
+│   ├── acquisition_functions.py    # 采集函数（EI/UCB/PoI/Thompson，纯 NumPy）
+│   ├── domain_features.py          # BoTorch 输入变换（水胶比等导出特征）
 │   ├── multi_objective.py          # pymoo 进化优化（NSGA-II/III/AGE-MOEA）
 │   ├── topsis_selector.py          # TOPSIS 多准则决策（纯 NumPy）
-│   └── feedback_manager.py         # 闭环反馈（导入/对比/更新/日志）
+│   ├── virtual_optimizer.py        # 虚拟空间优化（CTGAN + BO 融合）
+│   ├── feedback_manager.py         # 闭环反馈（导入/对比/更新/日志）
+│   └── benchmark.py                # UHPCBenchmark：Trail/Count/Compare 对比
+├── data/
+│   ├── literature.csv              # 37 条 UHPC 文献基准数据（随仓库提供）
+│   ├── column_mapping.py           # 10 个外部数据集 → 17 标准列 映射（876 行）
+│   ├── raw/                        # 外部数据集（.gitignore 忽略，见 docs/DATA.md）
+│   ├── generated/                  # CTGAN 生成数据输出（首次运行时自动创建）
+│   └── experiments/                # 闭环实验数据导入（首次运行时自动创建）
+├── docs/
+│   └── DATA.md                     # 数据集来源 URL / SHA256 / 落盘路径
+├── scripts/
+│   └── fetch_data.py               # 按 docs/DATA.md 下载并校验 SHA256
+├── models/                         # 训练好的模型持久化（首次运行时自动创建）
 ├── templates/
 │   └── uhpc_params.yaml            # UHPC 参数模板（12特征+5目标+约束）
-├── data/
-│   ├── literature.csv              # 37 条 UHPC 文献基准数据
-│   ├── generated/                  # CTGAN 生成数据输出
-│   └── experiments/               # 闭环实验数据导入
-├── models/                         # 训练好的模型持久化
-├── tests/
-│   └── test_pipeline.py            # 95 个端到端集成测试
-├── Dockerfile                      # Docker 镜像定义
+├── tests/                          # 237 个用例，12 个文件（含 95 个端到端）
+│   ├── conftest.py
+│   ├── test_pipeline.py            # 95 个端到端集成测试
+│   ├── test_column_mapping.py      # 列映射 / 空白串 → NaN（4 个）
+│   └── test_{acquisition,bayesian_optimizer,config,data_bridge,data_manager,...
+│       e2e_optimization,feedback,model_trainer,multi_objective,virtual_optimizer}.py
+├── Dockerfile                      # Docker 镜像定义（python:3.12-slim）
 ├── docker-compose.yml              # Docker 编排
+├── runtime.txt                     # 目标 Python 版本（3.12）
 ├── requirements.txt                # Python 依赖清单
 └── README.md                       # 本文件
 ```
+
+> `models/`、`data/generated/`、`data/experiments/` 三个目录**首次运行相关页面时自动创建**，
+> 因此仓库里不预置（内容均为运行产物，已在 `.gitignore` 中忽略）。
 
 ---
 
@@ -332,6 +396,8 @@ fm.incremental_update("random_forest")
 ---
 
 ## ⏱ 性能基准
+
+> 下表是**开发环境参考值**（CPU、默认 37 行文献数据），不是 CI 实测；用于判断数量级。
 
 | 操作 | 数据量 | 耗时（参考） |
 |------|--------|------------|

@@ -32,11 +32,13 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 
 # ─── 可选依赖检查 ─────────────────────────────────────────────────
+# 注意：pymoo 的 AGEMOEA 在缺 numba 时抛的是 Exception 而不是 ImportError，
+# 因此把它从主 import 块里拆出来单独处理。原来放在同一 try/except ImportError 里，
+# 会导致异常逃逸、HAS_PYMOO 永远无法变成 False —— 即「假降级」。
 try:
     from pymoo.core.problem import Problem
     from pymoo.algorithms.moo.nsga2 import NSGA2
     from pymoo.algorithms.moo.nsga3 import NSGA3
-    from pymoo.algorithms.moo.age import AGEMOEA
     from pymoo.operators.crossover.sbx import SBX
     from pymoo.operators.mutation.pm import PM
     from pymoo.operators.sampling.rnd import FloatRandomSampling
@@ -47,6 +49,14 @@ try:
     HAS_PYMOO = True
 except ImportError:
     HAS_PYMOO = False
+
+try:
+    from pymoo.algorithms.moo.age import AGEMOEA
+
+    HAS_AGEMOEA = True
+except Exception:  # noqa: BLE001 — AGEMOEA 缺 numba 时抛 Exception
+    AGEMOEA = None
+    HAS_AGEMOEA = False
 
 # 本地模块
 from core.config import (
@@ -311,6 +321,12 @@ class MultiObjectiveOptimizer:
             raise ValueError(
                 f"不支持的算法: {algorithm}。可选: {list(self.ALGORITHMS.keys())}"
             )
+        # AGEMOEA 依赖 numba；缺失时给出可操作的报错，而不是 AttributeError
+        if self.algorithm == "agemoea" and not HAS_AGEMOEA:
+            raise ImportError(
+                "AGE-MOEA 需要 numba（未安装）。请执行: python -m pip install numba，"
+                "或改用 algorithm='nsga2' / 'nsga3'"
+            )
         self.surrogate_model = surrogate_model
         self.pop_size = pop_size
         self.verbose = verbose
@@ -452,6 +468,10 @@ class MultiObjectiveOptimizer:
                 eliminate_duplicates=True,
             )
         elif algo == "agemoea":
+            if not HAS_AGEMOEA:
+                raise ImportError(
+                    "AGE-MOEA 需要 numba（未安装）。请执行: python -m pip install numba"
+                )
             return AGEMOEA(
                 pop_size=self.pop_size,
                 sampling=FloatRandomSampling(),

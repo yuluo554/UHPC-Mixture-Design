@@ -12,9 +12,33 @@ Reference:
     BOxCrete / SustainableConcrete: arxiv.org/abs/2603.21525
 """
 
-import torch
-from torch import Tensor
-from botorch.models.transforms.input import InputTransform
+# torch / botorch 是可选依赖：BayesianOptimizer 的 GP 路径才需要它们。
+# 顶层无保护 import 会让「没装 torch 时也能用 RF/进化优化」的降级失效
+# （原始缺陷 A：HAS_TORCH=False 分支永远走不到）。
+try:
+    import torch
+    from torch import Tensor
+    from botorch.models.transforms.input import InputTransform
+
+    HAS_TORCH = True
+except ImportError:  # noqa: BLE001 — 缺 torch 或缺 botorch 都走降级
+    torch = None
+    Tensor = "torch.Tensor"
+    HAS_TORCH = False
+
+    class InputTransform:  # type: ignore[no-redef]
+        """占位基类：仅在缺少 botorch 时用于让本模块可被 import。
+
+        真正使用时（AppendUHPCFeatures.__init__）会抛出 ImportError。
+        """
+
+        transform_on_train: bool = True
+        transform_on_eval: bool = True
+        transform_on_fantasize: bool = True
+        is_one_to_many: bool = False
+
+        def __init__(self, *args, **kwargs):
+            pass
 
 
 class AppendUHPCFeatures(InputTransform):
@@ -77,6 +101,12 @@ class AppendUHPCFeatures(InputTransform):
         (composition group first, then fibre, then curing).
         """
         super().__init__()
+        if not HAS_TORCH:
+            raise ImportError(
+                "AppendUHPCFeatures 需要 torch 与 botorch（未安装）。"
+                "请执行: python -m pip install torch botorch，"
+                "或改用不需要 GP 的贝叶斯优化后端（surrogate_type='rf'）"
+            )
         self.cement_idx = cement_idx
         self.sf_idx = sf_idx
         self.qp_idx = qp_idx
